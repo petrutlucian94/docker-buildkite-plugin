@@ -126,14 +126,16 @@ if plugin_read_list_into_result BUILDKITE_PLUGIN_DOCKER_TMPFS ; then
 fi
 
 workdir=''
+workdir_mnt=''
 
 if [[ -n "${BUILDKITE_PLUGIN_DOCKER_WORKDIR:-}" ]] || [[ "${BUILDKITE_PLUGIN_DOCKER_MOUNT_CHECKOUT:-on}" =~ ^(true|on|1)$ ]] ; then
   workdir="${BUILDKITE_PLUGIN_DOCKER_WORKDIR:-$workdir_default}"
+  workdir_mnt=${workdir}_mnt
 fi
 
 # By default, mount $PWD onto $WORKDIR
 if [[ "${BUILDKITE_PLUGIN_DOCKER_MOUNT_CHECKOUT:-on}" =~ ^(true|on|1)$ ]] ; then
-  args+=( "--volume" "${pwd_default}:${workdir}" )
+  args+=( "--volume" "${pwd_default}:${workdir_mnt}" )
 fi
 
 # Parse volumes (and deprecated mounts) and add them to the docker args
@@ -143,10 +145,10 @@ if plugin_read_list_into_result BUILDKITE_PLUGIN_DOCKER_VOLUMES BUILDKITE_PLUGIN
   done
 fi
 
-# Set workdir if one is provided or if the checkout is mounted
-if [[ -n "${workdir:-}" ]] || [[ "${BUILDKITE_PLUGIN_DOCKER_MOUNT_CHECKOUT:-on}" =~ ^(true|on|1)$ ]]; then
-  args+=("--workdir" "${workdir}")
-fi
+# # Set workdir if one is provided or if the checkout is mounted
+# if [[ -n "${workdir:-}" ]] || [[ "${BUILDKITE_PLUGIN_DOCKER_MOUNT_CHECKOUT:-on}" =~ ^(true|on|1)$ ]]; then
+#   args+=("--workdir" "${workdir}")
+# fi
 
 # Support docker run --user
 if [[ -n "${BUILDKITE_PLUGIN_DOCKER_USER:-}" ]] && [[ -n "${BUILDKITE_PLUGIN_DOCKER_PROPAGATE_UID_GID:-}" ]]; then
@@ -339,6 +341,13 @@ if [[ -n "${BUILDKITE_COMMAND}" ]] ; then
   if is_windows ; then
     # The windows CMD shell only supports multiple commands with &&.
     windows_multi_command=${BUILDKITE_COMMAND//$'\n'/ && }
+
+    # As a quick workaround for a rustc bug [1], we'll copy the project dir,
+    # avoiding using the mounted dir directly (which rustc cannot handle).
+    # I'm doing this at the buildkite plugin level to avoid polluting the
+    # CI pipeline.
+    # [1] https://github.com/rust-lang/rust/issues/59117
+    windows_multi_command="xcopy $workdir_mnt $workdir /E /H /I && cd $workdir && $windows_multi_command"
     args+=("${windows_multi_command}")
     display_command+=("'${windows_multi_command}'")
   else
@@ -353,6 +362,7 @@ elif [[ ${#command[@]} -gt 0 ]] ; then
 fi
 
 echo "--- :docker: Running ${display_command[*]} in ${BUILDKITE_PLUGIN_DOCKER_IMAGE}"
+echo "--- :docker: docker run ${args[*]}"
 
 if [[ "${debug_mode:-off}" =~ (on) ]] ; then
   echo "$ docker run ${args[*]}" >&2
