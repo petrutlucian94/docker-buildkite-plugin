@@ -87,7 +87,8 @@ if is_windows ; then
   init_default=''
   mount_agent_default=''
   workdir_default="C:\\workdir"
-  pwd_default="$(cmd.exe /C "echo %CD%")"
+  # pwd_default="$(cmd.exe /C "echo %CD%")"
+  pwd_default="$(powershell.exe -command "echo \$(pwd).Path")"
 elif is_macos ; then
   mount_agent_default=''
 fi
